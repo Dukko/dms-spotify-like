@@ -1,0 +1,14 @@
+{
+  "id": "spotifyLike",
+  "name": "Spotify Like",
+  "description": "DankDash-style media popout with a heart button to save/unsave the current track to your Spotify Library",
+  "version": "1.0.0",
+  "author": "dukkokun",
+  "icon": "favorite",
+  "type": "widget",
+  "component": "./SpotifyLikeWidget.qml",
+  "settings": "./SpotifyLikeSettings.qml",
+  "capabilities": ["dankbar-widget"],
+  "permissions": ["settings_read", "settings_write", "process", "network"],
+  "requires_dms": ">=1.4.0"
+}
