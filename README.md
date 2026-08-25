@@ -23,6 +23,8 @@ This plugin talks to the Spotify Web API directly, so it needs its own (free) Sp
 
 That's it — the heart button should start reflecting and controlling your Library.
 
+> **Note:** the official Spotify client's own now-playing heart icon doesn't reliably live-refresh when your Library is changed by an external app (like this plugin) via the API. If a save/unsave doesn't seem to show up in Spotify, don't trust that icon — check your **Liked Songs** playlist instead, which reflects the real state.
+
 ## Requirements
 
 - `python3` (stdlib only, used for the one-time OAuth login flow)
