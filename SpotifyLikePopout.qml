@@ -34,14 +34,30 @@ PopoutComponent {
     readonly property real currentVolume: usePlayerVolume ? activePlayer.volume : (AudioService.sink?.audio?.volume ?? 0)
     property real previousVolume: 0.0
     property bool isSeeking: false
-    property bool devicePanelOpen: false
-    property bool volumePanelOpen: false
-    property bool volumePanelDragging: false
     readonly property var availableDevices: AudioService.getAvailableSinks()
 
-    function closePanels() {
-        devicePanelOpen = false;
-        volumePanelOpen = false;
+    // Flyouts use QtQuick.Controls Popup parented to the overlay of this
+    // popout's own window -- the same mechanism DankDropdown and every
+    // context menu in this shell use. On Wayland this renders as a real
+    // xdg-popup subsurface, so it can extend past this card's edges without
+    // being clipped to it, and (unlike a second independent DankPopout
+    // window) it doesn't fight this popout's own focus-grab/dismiss logic.
+    function openFlyout(popout, anchorItem) {
+        if (!anchorItem)
+            return;
+        const overlay = root.Overlay.overlay;
+        if (!overlay)
+            return;
+        const cardRight = contentCard.mapToItem(overlay, contentCard.width, 0);
+        const buttonTop = anchorItem.mapToItem(overlay, 0, 0);
+        popout.x = cardRight.x + Theme.spacingS;
+        popout.y = buttonTop.y;
+        popout.open();
+    }
+
+    function closeFlyouts() {
+        volumeFlyout.close();
+        deviceFlyout.close();
     }
 
     function setVolume(volume) {
@@ -142,15 +158,230 @@ PopoutComponent {
         id: sharedTooltip
     }
 
-    Timer {
-        id: volumeCloseTimer
-        interval: 350
-        repeat: false
-        onTriggered: {
-            if (!root.volumePanelDragging)
-                root.volumePanelOpen = false;
+    Popup {
+        id: volumeFlyout
+        parent: root.Overlay.overlay
+        width: 64
+        height: 180
+        padding: 0
+        modal: true
+        dim: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            color: "transparent"
         }
-    }
+
+        contentItem: Rectangle {
+            radius: Theme.cornerRadius * 2
+            color: Theme.withAlpha(Theme.surfaceContainer, 0.98)
+            border.color: Theme.withAlpha(Theme.outline, 0.6)
+            border.width: 2
+
+            ElevationShadow {
+                anchors.fill: parent
+                z: -1
+                level: Theme.elevationLevel2
+                fallbackOffset: 4
+                targetRadius: parent.radius
+                targetColor: parent.color
+                borderColor: parent.border.color
+                borderWidth: parent.border.width
+                shadowEnabled: Theme.elevationEnabled
+            }
+
+            Item {
+                    anchors.fill: parent
+                    anchors.margins: Theme.spacingS
+
+                    Item {
+                        id: fillTrack
+                        width: parent.width * 0.5
+                        height: parent.height - Theme.spacingXL * 2
+                        anchors.top: parent.top
+                        anchors.topMargin: Theme.spacingS
+                        anchors.horizontalCenter: parent.horizontalCenter
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                            radius: Theme.cornerRadius
+                        }
+
+                        Rectangle {
+                            width: parent.width
+                            height: root.volumeAvailable ? (Math.min(1.0, root.currentVolume) * parent.height) : 0
+                            anchors.bottom: parent.bottom
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            color: Theme.primary
+                            bottomLeftRadius: Theme.cornerRadius
+                            bottomRightRadius: Theme.cornerRadius
+                        }
+
+                        Rectangle {
+                            width: parent.width + 8
+                            height: 8
+                            radius: Theme.cornerRadius
+                            y: {
+                                const ratio = root.volumeAvailable ? Math.min(1.0, root.currentVolume) : 0;
+                                const travel = parent.height - height;
+                                return Math.max(0, Math.min(travel, travel * (1 - ratio)));
+                            }
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            color: Theme.primary
+                            border.width: 3
+                            border.color: Theme.surfaceContainer
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            anchors.margins: -12
+                            enabled: root.volumeAvailable
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            preventStealing: true
+                            onPressed: mouse => updateVolume(mouse)
+                            onPositionChanged: mouse => {
+                                if (pressed)
+                                    updateVolume(mouse);
+                            }
+                            onClicked: mouse => updateVolume(mouse)
+
+                            function updateVolume(mouse) {
+                                if (!root.volumeAvailable)
+                                    return;
+                                root.setVolume(1.0 - (mouse.y / fillTrack.height));
+                            }
+                        }
+                    }
+
+                    StyledText {
+                        anchors.bottom: parent.bottom
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        anchors.bottomMargin: Theme.spacingM
+                        text: root.volumeAvailable ? Math.round(root.currentVolume * 100) + "%" : "0%"
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceText
+                        font.weight: Font.Medium
+                    }
+                }
+            }
+        }
+    Popup {
+        id: deviceFlyout
+        parent: root.Overlay.overlay
+
+        width: 280
+        height: Math.max(120, Math.min(280, (root.availableDevices?.length || 0) * 50 + 76))
+        padding: 0
+        modal: true
+        dim: false
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+        background: Rectangle {
+            color: "transparent"
+        }
+
+        contentItem: Rectangle {
+            radius: Theme.cornerRadius * 2
+            color: Theme.withAlpha(Theme.surfaceContainer, 0.98)
+            border.color: Theme.withAlpha(Theme.outline, 0.6)
+            border.width: 2
+
+            ElevationShadow {
+                anchors.fill: parent
+                z: -1
+                level: Theme.elevationLevel2
+                fallbackOffset: 4
+                targetRadius: parent.radius
+                targetColor: parent.color
+                borderColor: parent.border.color
+                borderWidth: parent.border.width
+                shadowEnabled: Theme.elevationEnabled
+            }
+
+            Column {
+                    anchors.fill: parent
+                    anchors.margins: Theme.spacingM
+                    spacing: Theme.spacingS
+
+                    StyledText {
+                        text: "Output Device (" + (root.availableDevices?.length || 0) + ")"
+                        font.pixelSize: Theme.fontSizeMedium
+                        font.weight: Font.Medium
+                        color: Theme.surfaceText
+                        width: parent.width
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+
+                    ScrollView {
+                        width: parent.width
+                        height: parent.height - 32 - Theme.spacingS
+                        clip: true
+
+                        Column {
+                            width: parent.width
+                            spacing: Theme.spacingXS
+
+                            Repeater {
+                                model: root.availableDevices || []
+
+                                Rectangle {
+                                    id: deviceRow
+                                    required property var modelData
+                                    width: parent.width
+                                    height: 44
+                                    radius: Theme.cornerRadius
+                                    color: deviceArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.12) : Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
+                                    border.color: modelData === AudioService.sink ? Theme.primary : Theme.withAlpha(Theme.outline, 0.2)
+                                    border.width: modelData === AudioService.sink ? 2 : 1
+
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: Theme.spacingM
+                                        anchors.right: parent.right
+                                        anchors.rightMargin: Theme.spacingM
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: Theme.spacingM
+
+                                        DankIcon {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            name: root.getAudioDeviceIcon(deviceRow.modelData)
+                                            size: 18
+                                            color: deviceRow.modelData === AudioService.sink ? Theme.primary : Theme.surfaceText
+                                        }
+
+                                        StyledText {
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: parent.width - 18 - Theme.spacingM
+                                            text: AudioService.displayName(deviceRow.modelData)
+                                            font.pixelSize: Theme.fontSizeSmall
+                                            font.weight: deviceRow.modelData === AudioService.sink ? Font.Medium : Font.Normal
+                                            color: Theme.surfaceText
+                                            elide: Text.ElideRight
+                                            wrapMode: Text.NoWrap
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: deviceArea
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (deviceRow.modelData?.name) {
+                                                AudioService.setDefaultSinkByName(deviceRow.modelData.name);
+                                                deviceFlyout.close();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
     Item {
         id: shell
@@ -579,12 +810,15 @@ PopoutComponent {
                 MiniButton {
                     id: volumeButton
                     enabledState: root.volumeAvailable
-                    iconName: root.volumePanelOpen ? "expand_less" : root.getVolumeIcon()
+                    iconName: volumeFlyout.visible ? "expand_less" : root.getVolumeIcon()
                     iconColor: root.volumeAvailable && root.currentVolume > 0 ? Theme.primary : Theme.withAlpha(Theme.surfaceText, root.volumeAvailable ? 1.0 : 0.5)
                     tooltipText: "Volume"
                     onClicked: {
-                        root.devicePanelOpen = false;
-                        root.volumePanelOpen = !root.volumePanelOpen;
+                        deviceFlyout.close();
+                        if (volumeFlyout.visible)
+                            volumeFlyout.close();
+                        else
+                            root.openFlyout(volumeFlyout, volumeButton);
                     }
                     onWheeled: wheelEvent => {
                         wheelEvent.accepted = true;
@@ -595,11 +829,14 @@ PopoutComponent {
                 MiniButton {
                     id: audioDevicesButton
                     enabledState: true
-                    iconName: root.devicePanelOpen ? "expand_less" : "speaker"
+                    iconName: deviceFlyout.visible ? "expand_less" : "speaker"
                     tooltipText: "Output Device"
                     onClicked: {
-                        root.volumePanelOpen = false;
-                        root.devicePanelOpen = !root.devicePanelOpen;
+                        volumeFlyout.close();
+                        if (deviceFlyout.visible)
+                            deviceFlyout.close();
+                        else
+                            root.openFlyout(deviceFlyout, audioDevicesButton);
                     }
                 }
 
@@ -615,218 +852,5 @@ PopoutComponent {
             }
         }
 
-        // Flyouts live outside contentCard (siblings within the wider `shell`)
-        // so they render past the card's rounded edge instead of being
-        // clipped inside it. Positions are translated into shell-space by
-        // adding contentCard's own offset to the side-rail button positions.
-
-        MouseArea {
-            anchors.fill: parent
-            z: 150
-            enabled: root.devicePanelOpen || root.volumePanelOpen
-            onClicked: root.closePanels()
-        }
-
-        Rectangle {
-            id: volumePanel
-            visible: root.volumePanelOpen && root.volumeAvailable
-            width: 64
-            height: 180
-            x: contentCard.x + sideRail.x - width - Theme.spacingS
-            y: Math.max(0, Math.min(shell.height - height, contentCard.y + sideRail.y + volumeButton.y - (height - volumeButton.height) / 2))
-            radius: Theme.cornerRadius * 2
-            color: Theme.withAlpha(Theme.surfaceContainer, 0.98)
-            border.color: Theme.withAlpha(Theme.outline, 0.6)
-            border.width: 2
-            z: 200
-
-            MouseArea {
-                anchors.fill: parent
-                anchors.margins: -12
-                hoverEnabled: true
-                onEntered: volumeCloseTimer.stop()
-                onExited: {
-                    if (!root.volumePanelDragging)
-                        volumeCloseTimer.restart();
-                }
-            }
-
-            Item {
-                anchors.fill: parent
-                anchors.margins: Theme.spacingS
-
-                Item {
-                    id: fillTrack
-                    width: parent.width * 0.5
-                    height: parent.height - Theme.spacingXL * 2
-                    anchors.top: parent.top
-                    anchors.topMargin: Theme.spacingS
-                    anchors.horizontalCenter: parent.horizontalCenter
-
-                    Rectangle {
-                        anchors.fill: parent
-                        color: Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                        radius: Theme.cornerRadius
-                    }
-
-                    Rectangle {
-                        width: parent.width
-                        height: root.volumeAvailable ? (Math.min(1.0, root.currentVolume) * parent.height) : 0
-                        anchors.bottom: parent.bottom
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        color: Theme.primary
-                        bottomLeftRadius: Theme.cornerRadius
-                        bottomRightRadius: Theme.cornerRadius
-                    }
-
-                    Rectangle {
-                        width: parent.width + 8
-                        height: 8
-                        radius: Theme.cornerRadius
-                        y: {
-                            const ratio = root.volumeAvailable ? Math.min(1.0, root.currentVolume) : 0;
-                            const travel = parent.height - height;
-                            return Math.max(0, Math.min(travel, travel * (1 - ratio)));
-                        }
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        color: Theme.primary
-                        border.width: 3
-                        border.color: Theme.surfaceContainer
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        anchors.margins: -12
-                        enabled: root.volumeAvailable
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        preventStealing: true
-                        onPressed: mouse => {
-                            root.volumePanelDragging = true;
-                            volumeCloseTimer.stop();
-                            updateVolume(mouse);
-                        }
-                        onPositionChanged: mouse => {
-                            if (pressed)
-                                updateVolume(mouse);
-                        }
-                        onReleased: root.volumePanelDragging = false
-                        onCanceled: root.volumePanelDragging = false
-                        onClicked: mouse => updateVolume(mouse)
-
-                        function updateVolume(mouse) {
-                            if (!root.volumeAvailable)
-                                return;
-                            root.setVolume(1.0 - (mouse.y / fillTrack.height));
-                        }
-                    }
-                }
-
-                StyledText {
-                    anchors.bottom: parent.bottom
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottomMargin: Theme.spacingM
-                    text: root.volumeAvailable ? Math.round(root.currentVolume * 100) + "%" : "0%"
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.surfaceText
-                    font.weight: Font.Medium
-                }
-            }
-        }
-
-        Rectangle {
-            id: devicesPanel
-            visible: root.devicePanelOpen
-            width: 280
-            height: Math.max(120, Math.min(280, (root.availableDevices?.length || 0) * 50 + 76))
-            x: contentCard.x + sideRail.x - width - Theme.spacingS
-            y: Math.max(0, Math.min(shell.height - height, contentCard.y + sideRail.y + audioDevicesButton.y - (height - audioDevicesButton.height) / 2))
-            radius: Theme.cornerRadius * 2
-            color: Theme.withAlpha(Theme.surfaceContainer, 0.98)
-            border.color: Theme.withAlpha(Theme.outline, 0.6)
-            border.width: 2
-            z: 200
-
-            Column {
-                anchors.fill: parent
-                anchors.margins: Theme.spacingM
-                spacing: Theme.spacingS
-
-                StyledText {
-                    text: "Output Device (" + (root.availableDevices?.length || 0) + ")"
-                    font.pixelSize: Theme.fontSizeMedium
-                    font.weight: Font.Medium
-                    color: Theme.surfaceText
-                    width: parent.width
-                    horizontalAlignment: Text.AlignHCenter
-                }
-
-                ScrollView {
-                    width: parent.width
-                    height: parent.height - 32 - Theme.spacingS
-                    clip: true
-
-                    Column {
-                        width: parent.width
-                        spacing: Theme.spacingXS
-
-                        Repeater {
-                            model: root.availableDevices || []
-
-                            Rectangle {
-                                id: deviceRow
-                                required property var modelData
-                                width: parent.width
-                                height: 44
-                                radius: Theme.cornerRadius
-                                color: deviceArea.containsMouse ? Theme.withAlpha(Theme.primary, 0.12) : Theme.withAlpha(Theme.surfaceContainerHigh, Theme.popupTransparency)
-                                border.color: modelData === AudioService.sink ? Theme.primary : Theme.withAlpha(Theme.outline, 0.2)
-                                border.width: modelData === AudioService.sink ? 2 : 1
-
-                                Row {
-                                    anchors.left: parent.left
-                                    anchors.leftMargin: Theme.spacingM
-                                    anchors.right: parent.right
-                                    anchors.rightMargin: Theme.spacingM
-                                    anchors.verticalCenter: parent.verticalCenter
-                                    spacing: Theme.spacingM
-
-                                    DankIcon {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        name: root.getAudioDeviceIcon(deviceRow.modelData)
-                                        size: 18
-                                        color: deviceRow.modelData === AudioService.sink ? Theme.primary : Theme.surfaceText
-                                    }
-
-                                    StyledText {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        width: parent.width - 18 - Theme.spacingM
-                                        text: AudioService.displayName(deviceRow.modelData)
-                                        font.pixelSize: Theme.fontSizeSmall
-                                        font.weight: deviceRow.modelData === AudioService.sink ? Font.Medium : Font.Normal
-                                        color: Theme.surfaceText
-                                        elide: Text.ElideRight
-                                        wrapMode: Text.NoWrap
-                                    }
-                                }
-
-                                MouseArea {
-                                    id: deviceArea
-                                    anchors.fill: parent
-                                    hoverEnabled: true
-                                    cursorShape: Qt.PointingHandCursor
-                                    onClicked: {
-                                        if (deviceRow.modelData?.name) {
-                                            AudioService.setDefaultSinkByName(deviceRow.modelData.name);
-                                            root.devicePanelOpen = false;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 }
