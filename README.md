@@ -27,15 +27,16 @@ That's it — the heart button should start reflecting and controlling your Libr
 
 ## Requirements
 
-- `python3` (stdlib only, used for the one-time OAuth login flow)
-- `curl`
-- DankMaterialShell `>= 1.4.0`
+- `python3` (stdlib only — used for both the one-time OAuth login flow and every Web API call)
+- DankMaterialShell `>= 1.6.0`
 
 ## How it works
 
 - Authentication is Authorization Code + PKCE with a loopback redirect (`spotify_auth.py`) — no client secret needed, nothing but stdlib.
 - Tokens are stored in DMS's per-plugin state file (`~/.local/state/DankMaterialShell/plugins/spotifyLike_state.json`), not in the plugin's settings.
 - The heart button uses Spotify's `/v1/me/library` endpoints (the current, non-deprecated Library API).
+- Every Web API call goes through `spotify_api.py`, a stdlib-only helper that is handed one JSON line on **stdin** and answers with one JSON line on stdout. Two reasons: the bearer token never appears in the process's `argv`, which on Linux is world-readable through `/proc/<pid>/cmdline`; and the helper only exposes the four fixed Spotify operations below, so it cannot be repurposed into a general HTTP client that forwards the token elsewhere.
+- **One track, one request.** The library state for a track is fetched once and cached, so re-opening the popout or editing a setting costs nothing, and a token that is about to expire is refreshed once and shared by everything waiting on it. Spotify's per-app rate limit is small enough that this is the difference between a plugin that runs all day and one that gets itself throttled.
 
 ## License
 
