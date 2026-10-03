@@ -144,13 +144,15 @@ PopoutComponent {
         return "speaker";
     }
 
-    // Force a fresh read of saved tokens whenever the popout is opened, so a
-    // Connect done in Settings is picked up even if the live-update signal
-    // was missed (e.g. widget instance created before pluginService was ready).
+    // Re-read saved tokens when the popout opens, so a Connect done in Settings
+    // is picked up even if the live-update signal was missed (e.g. the widget
+    // instance was created before pluginService was ready). This only re-reads
+    // local state; requestCheck() is a no-op once the current track's library
+    // answer is already known, so opening the popout costs no API call.
     Component.onCompleted: {
         if (root.widgetRoot) {
             root.widgetRoot.loadTokens();
-            root.widgetRoot.checkSaved();
+            root.widgetRoot.requestCheck();
         }
     }
 
@@ -465,11 +467,14 @@ PopoutComponent {
                     width: parent.width
                     height: 140
 
-                    DankAlbumArt {
+                    // MediaArtwork is the current DMS album-art component
+                    // (DankAlbumArt was removed after 1.6.2). It takes a
+                    // resolved URL rather than a player.
+                    MediaArtwork {
                         anchors.centerIn: parent
                         width: 140
                         height: 140
-                        activePlayer: root.activePlayer
+                        artUrl: root.activePlayer?.trackArtUrl || ""
                     }
                 }
 
@@ -519,6 +524,9 @@ PopoutComponent {
                         width: parent.width
                         height: 20
                         activePlayer: root.activePlayer
+                        // DankSeekbar.canSeek requires stableLength > 0; without
+                        // it the bar renders but silently refuses every seek.
+                        stableLength: root.stableLength
                         isSeeking: root.isSeeking
                         onIsSeekingChanged: root.isSeeking = isSeeking
                     }
